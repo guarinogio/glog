@@ -1,0 +1,57 @@
+name: Update Package Version
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  update-version:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '22.5.1'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Bump version
+        id: bump-version
+        run: |
+          # Extract the current version
+          current_version=$(jq -r '.version' package.json)
+          # Split the version into an array
+          IFS='.' read -r -a version_parts <<< "$current_version"
+          # Increment the minor version
+          minor=$((version_parts[1] + 1))
+          new_version="${version_parts[0]}.$minor.0"
+          # Update the package.json with the new version
+          jq --arg new_version "$new_version" '.version = $new_version' package.json > temp.json && mv temp.json package.json
+          echo "New version: $new_version"
+          echo "::set-output name=new_version::$new_version"
+
+      - name: Commit and push changes
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git checkout -b update-version
+          git add package.json
+          git commit -m "Bump version to ${{ steps.bump-version.outputs.new_version }}"
+          git push -u origin update-version
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: Bump version to ${{ steps.bump-version.outputs.new_version }}
+          branch: update-version
+          base: main
+          title: Bump version to ${{ steps.bump-version.outputs.new_version }}
+          body: |
+            This PR bumps the version of the package.json to ${{ steps.bump-version.outputs.new_version }}.
